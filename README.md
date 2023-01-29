@@ -1,0 +1,1 @@
+This is project to learn how to build text edior; based on [Build Your TextEditor With Rust!](https://medium.com/@otukof/build-your-text-editor-with-rust-678a463f968b)
