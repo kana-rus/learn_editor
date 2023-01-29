@@ -1,17 +1,21 @@
+mod buffer; use buffer::Buffer;
+mod cursor; use cursor::Cursor;
+mod window; use window::Window;
+
 use std::{
-    io::{stdout, Stdout},
+    io::stdout,
     time::Duration,
 };
 use crossterm::{
     Result,
-    cursor,
+    ExecutableCommand,
+    style::Print,
     terminal, terminal::ClearType,
-    style, style::Print,
     event, event::{
         Event,
         KeyCode,
         KeyModifiers as Modifier,
-    }, Command, ExecutableCommand,
+    },
 };
 
 
@@ -26,19 +30,6 @@ impl Default for Config {
     }
 }
 
-struct Buffer {
-    stdout:  Stdout,
-    content: Vec<String>,
-}
-
-struct Window {
-    size: (u16, u16),
-}
-
-struct Cursor {
-    position: (u16, u16),
-}
-
 struct Editor {
     config: Config,
     buffer: Buffer,
@@ -49,13 +40,9 @@ impl Editor {
     fn new() -> Result<Self> {
         stdout()
             .execute(terminal::Clear(ClearType::All))?
-            .execute(cursor::MoveTo(0, 0))?;
+            .execute(crossterm::cursor::MoveTo(0, 0))?;
         terminal::enable_raw_mode()?;
         Ok(Self::default())
-    }
-    fn execute(&mut self, command: impl Command) -> Result<()> {
-        self.buffer.stdout.execute(command)?;
-        Ok(())
     }
     fn edit(&mut self) -> Result<()> {
         while event::poll(Duration::from_secs(60))? {
@@ -64,14 +51,26 @@ impl Editor {
 
                 if input == self.config.exit_key {break}
                 match input {
-                    (Modifier::NONE, KeyCode::Char(ch)) => self.execute(Print(ch))?,
-                    (_, KeyCode::Enter) => self.execute(Print("\r\n"))?,
-                    (_, KeyCode::Backspace | KeyCode::Delete) => self.execute(terminal::Clear(ClearType::CurrentLine))?,
+                    (Modifier::NONE, KeyCode::Char(ch)) => {
+                        self.window
+                            .execute(Print(ch))?
+                            .execute(self.cursor.move_x(1))?;
+                    },
+                    (_, KeyCode::Enter) => {
+                        self.window
+                            .execute(Print("\r\n"))?
+                            .execute(self.cursor.set_x(0).move_y(1))?;
+                    },
+                    (_, KeyCode::Backspace | KeyCode::Delete) => {
+                        self.window
+                            .execute(terminal::Clear(ClearType::CurrentLine))?
+                            .execute(self.cursor.move_x(-1))?;
+                    },
 
-                    (_, KeyCode::Up   ) => self.execute(cursor::MoveUp(1))?,
-                    (_, KeyCode::Down ) => self.execute(cursor::MoveDown(1))?,
-                    (_, KeyCode::Left ) => self.execute(cursor::MoveLeft(1))?,
-                    (_, KeyCode::Right) => self.execute(cursor::MoveRight(1))?,
+                    (_, KeyCode::Up   ) => {self.window.execute(self.cursor.move_y(1))?;},
+                    (_, KeyCode::Down ) => {self.window.execute(self.cursor.move_y(-1))?;},
+                    (_, KeyCode::Left ) => {self.window.execute(self.cursor.move_x(-1))?;},
+                    (_, KeyCode::Right) => {self.window.execute(self.cursor.move_x(1))?;},
 
                     _ => (),
                 }
@@ -84,16 +83,9 @@ impl Default for Editor {
     fn default() -> Self {
         Self {
             config: Config::default(),
-            buffer: Buffer {
-                stdout:  stdout(),
-                content: vec![],
-            },
-            cursor: Cursor {
-                position: (0, 0),
-            },
-            window: Window {
-                size: terminal::size().unwrap(),
-            }
+            buffer: Buffer::init(),
+            cursor: Cursor::init(),
+            window: Window::init(),
         }
     }
 }
